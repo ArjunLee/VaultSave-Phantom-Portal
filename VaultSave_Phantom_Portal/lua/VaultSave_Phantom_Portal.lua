@@ -24,9 +24,7 @@
 local api = {}
 
 local PROGRAM_NAME = "VaultSavePhantomTravel"
--- REFramework json module uses "reframework/data" as base
 local RELATIVE_DATA_PATH = PROGRAM_NAME .. "\\data.json" 
--- Lua io module uses Game Root as base, so we need full relative path
 local LOG_FILE_PATH = PROGRAM_NAME .. "\\VSPT-DebugLog.txt"
 
 -- i18n Configuration
