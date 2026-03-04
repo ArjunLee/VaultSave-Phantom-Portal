@@ -4,6 +4,9 @@ log/
 lua/VaultSave_Phantom_Portal/Plugin-making/.log
 lua/VaultSave_Phantom_Portal/Plugin-making/dmp
 re9_dump/
+常用命令.md
+lua/VaultSave_Phantom_Portal/docs/
+lua/VaultSave_Phantom_Portal/bak/
 
 # Lua
 *.luac
@@ -27,6 +30,7 @@ cmake_install.cmake
 *.ilk
 *.exp
 compile_commands.json
+
 
 
 

@@ -1,3 +1,26 @@
+--[[
+    VaultSave Phantom Portal
+    Copyright (c) 2026 Arjun Li
+
+    Created: 2026-03-02
+    Based on REFramework (https://github.com/praydog/REFramework)
+    
+    Original Reverse Engineering Logic for RE Engine (RE9):
+    - Dynamic Physics Component Disabling (Collider, CharacterController, etc.)
+    - Coordinate Warping Strategy (warp/set_Position chains)
+    
+    Licensed under the MIT License.
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+]]
+
 local api = {}
 
 local PROGRAM_NAME = "VaultSavePhantomTravel"
