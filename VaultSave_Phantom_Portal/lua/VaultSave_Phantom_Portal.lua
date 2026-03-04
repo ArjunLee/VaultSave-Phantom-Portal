@@ -1042,7 +1042,7 @@ re.on_draw_ui(function()
             imgui.same_line()
             -- Ensure slot.note is not nil
             local safe_note = slot.note or ""
-            imgui.push_item_width(150)
+            imgui.push_item_width(-45)
             
             local note_changed, new_note = false, safe_note
             local hint = string.format(get_text("slot_note_hint"), i)
@@ -1061,6 +1061,7 @@ re.on_draw_ui(function()
             imgui.pop_item_width()
             if note_changed then 
                 slot.note = new_note 
+                save_data()
             end
 
             imgui.same_line()
