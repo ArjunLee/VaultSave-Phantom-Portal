@@ -85,6 +85,11 @@ public:
         return s_instance;
     }
 
+    // safe version that returns nullptr if not initialized
+    static API* try_get() {
+        return s_instance.get();
+    }
+
 public:
     API(const REFrameworkPluginInitializeParam* param) 
         : m_param{param},
