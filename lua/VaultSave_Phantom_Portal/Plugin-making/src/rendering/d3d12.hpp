@@ -5,11 +5,13 @@
 #include <d3d12.h>
 #include "shared.hpp"
 
-struct D3D12 {
+struct D3D12
+{
     ComPtr<ID3D12CommandAllocator> cmd_allocator{};
     ComPtr<ID3D12GraphicsCommandList> cmd_list{};
 
-    enum class RTV : int{
+    enum class RTV : int
+    {
         BACKBUFFER_0,
         BACKBUFFER_1,
         BACKBUFFER_2,
@@ -19,7 +21,8 @@ struct D3D12 {
         COUNT,
     };
 
-    enum class SRV : int {
+    enum class SRV : int
+    {
         IMGUI_FONT,
         IMGUI,
         BLANK,
@@ -30,25 +33,33 @@ struct D3D12 {
     ComPtr<ID3D12DescriptorHeap> srv_desc_heap{};
     ComPtr<ID3D12Resource> rts[(int)RTV::COUNT]{};
 
-    auto& get_rt(RTV rtv) { return rts[(int)rtv]; }
+    auto &get_rt(RTV rtv) { return rts[(int)rtv]; }
 
-    D3D12_CPU_DESCRIPTOR_HANDLE get_cpu_rtv(ID3D12Device* device, RTV rtv) {
+    D3D12_CPU_DESCRIPTOR_HANDLE get_cpu_rtv(ID3D12Device *device, RTV rtv)
+    {
         return {rtv_desc_heap->GetCPUDescriptorHandleForHeapStart().ptr +
                 (int)rtv * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)};
     }
 
-    D3D12_CPU_DESCRIPTOR_HANDLE get_cpu_srv(ID3D12Device* device, SRV srv) {
+    D3D12_CPU_DESCRIPTOR_HANDLE get_cpu_srv(ID3D12Device *device, SRV srv)
+    {
         return {srv_desc_heap->GetCPUDescriptorHandleForHeapStart().ptr +
                 (int)srv * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)};
     }
 
-    D3D12_GPU_DESCRIPTOR_HANDLE get_gpu_srv(ID3D12Device* device, SRV srv) {
+    D3D12_GPU_DESCRIPTOR_HANDLE get_gpu_srv(ID3D12Device *device, SRV srv)
+    {
         return {srv_desc_heap->GetGPUDescriptorHandleForHeapStart().ptr +
                 (int)srv * device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)};
     }
 
     uint32_t rt_width{};
     uint32_t rt_height{};
+
+    // Synchronization objects
+    ComPtr<ID3D12Fence> fence{};
+    UINT64 fence_value = 0;
+    HANDLE fence_event{};
 
     bool initialize();
     void render_imgui();

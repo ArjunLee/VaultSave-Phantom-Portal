@@ -25,3 +25,6 @@ cmake_install.cmake
 *.ilk
 *.exp
 compile_commands.json
+
+lua/VaultSave_Phantom_Portal/Plugin-making/.log
+lua/VaultSave_Phantom_Portal/Plugin-making/dmp
