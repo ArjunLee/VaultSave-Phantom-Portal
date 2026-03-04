@@ -10,6 +10,8 @@ lua/VaultSave_Phantom_Portal/docs/
 VaultSave_Phantom_Portal/bak/
 docs/
 dmp/
+*.log
+*log*.txt
 
 # Lua
 *.luac

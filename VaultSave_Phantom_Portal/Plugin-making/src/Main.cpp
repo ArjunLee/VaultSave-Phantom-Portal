@@ -34,7 +34,7 @@ void plugin_on_frame()
 // Callback for UI drawing
 void plugin_on_draw_ui(REFImGuiFrameCbData *data)
 {
-    vspp::ui::UIManager::get().render();
+    vspp::ui::UIManager::get().render(data);
 }
 
 // Callback for window messages

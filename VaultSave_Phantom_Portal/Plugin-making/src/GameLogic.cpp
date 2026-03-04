@@ -288,7 +288,8 @@ namespace vspp
         auto transform = get_player_transform();
         if (!transform)
         {
-            core::Logger::get().error("Save failed: Player not found");
+            // Use debug level to avoid spamming user if they hold the key or if player is not ready
+            core::Logger::get().debug("Save failed: Player not found");
             return;
         }
 
@@ -337,76 +338,97 @@ namespace vspp
 
     // --- Noclip Implementation ---
 
-    // Placeholder for the detailed noclip logic which is quite long.
-    // I will implement the critical parts: start, tick, stop.
-    // Note: We need to reimplement disable_physics_components logic here or use the one from Main.cpp if I moved it.
-    // I will implement a simplified version for this file to be complete.
-
     void GameLogic::disable_physics_components(API::ManagedObject *game_object)
     {
         if (!game_object)
             return;
 
         auto tdb = API::get()->tdb();
+
+        // Helper to check enable state and disable
+        auto check_and_disable = [&](API::ManagedObject *comp)
+        {
+            if (!comp)
+                return;
+            auto enabled_ret = try_invoke_ret(comp, "get_Enabled", {});
+            bool enabled = false;
+            if (enabled_ret)
+                std::memcpy(&enabled, enabled_ret->bytes.data(), sizeof(bool));
+
+            if (enabled)
+            {
+                bool new_enabled = false;
+                try_invoke_void_1_any(comp, &new_enabled, {"set_Enabled"});
+
+                // Avoid adding duplicates to pending list
+                bool found = false;
+                for (auto *p : m_pending_components)
+                {
+                    if (p == comp)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                {
+                    m_pending_components.push_back(comp);
+                    core::Logger::get().debug("Disabled component: " + std::string(comp->get_type_definition()->get_name()));
+                }
+            }
+        };
+
+        // 1. via.physics.Collider
         auto collider_type = tdb->find_type("via.physics.Collider");
         if (collider_type)
         {
-            std::vector<void *> args;
-            args.push_back(collider_type->get_instance());
+            std::vector<void *> args{collider_type->get_instance()};
             auto ret = try_invoke_ret(game_object, "getComponents(System.Type)", args);
             if (ret && ret->ptr)
             {
                 auto list = (API::ManagedObject *)ret->ptr;
                 auto count_ret = try_invoke_ret(list, "get_Count", {});
-                if (count_ret)
+                int count = 0;
+                if (count_ret && count_ret->bytes.size() >= sizeof(int))
+                    std::memcpy(&count, count_ret->bytes.data(), sizeof(int));
+
+                for (int i = 0; i < count; ++i)
                 {
-                    int count = 0;
-                    // REFramework invoke returns InvokeRet which has exception_thrown, ptr, and bytes.
-                    // For value types (int), it might be in bytes or ptr depending on ABI.
-                    // Usually get_Count returns int32. It should be in bytes.
-                    if (count_ret->bytes.size() >= sizeof(int))
-                    {
-                        std::memcpy(&count, count_ret->bytes.data(), sizeof(int));
-                    }
+                    std::vector<void *> idx_args{(void *)(uintptr_t)i}; // Cast to avoid warning
+                    // Actually, pass pointer to int
+                    int idx = i;
+                    idx_args[0] = &idx;
 
-                    for (int i = 0; i < count; ++i)
+                    auto item_ret = try_invoke_ret(list, "get_Item", idx_args);
+                    if (item_ret && item_ret->ptr)
                     {
-                        std::vector<void *> idx_args;
-                        int idx = i;
-                        idx_args.push_back(&idx);
+                        auto component = (API::ManagedObject *)item_ret->ptr;
+                        auto enabled_ret = try_invoke_ret(component, "get_Enabled", {});
+                        bool enabled = false;
+                        if (enabled_ret)
+                            std::memcpy(&enabled, enabled_ret->bytes.data(), sizeof(bool));
 
-                        auto item_ret = try_invoke_ret(list, "get_Item", idx_args);
-                        if (item_ret && item_ret->ptr)
+                        if (enabled)
                         {
-                            auto component = (API::ManagedObject *)item_ret->ptr;
-                            auto enabled_ret = try_invoke_ret(component, "get_Enabled", {});
-                            bool enabled = false;
-                            if (enabled_ret)
-                                std::memcpy(&enabled, enabled_ret->bytes.data(), sizeof(bool));
-
-                            if (enabled)
+                            auto filter_info = try_invoke_object_any(component, {"get_FilterInfo"});
+                            if (filter_info)
                             {
-                                auto filter_info = try_invoke_object_any(component, {"get_FilterInfo"});
-                                if (filter_info)
-                                {
-                                    auto mask_ret = try_invoke_ret(filter_info, "get_MaskBits", {});
-                                    uint32_t old_mask = 0;
-                                    if (mask_ret)
-                                        std::memcpy(&old_mask, mask_ret->bytes.data(), sizeof(uint32_t));
+                                auto mask_ret = try_invoke_ret(filter_info, "get_MaskBits", {});
+                                uint32_t old_mask = 0;
+                                if (mask_ret)
+                                    std::memcpy(&old_mask, mask_ret->bytes.data(), sizeof(uint32_t));
 
-                                    if (old_mask != 0)
-                                    {
-                                        m_pending_filter_infos.push_back({filter_info, old_mask});
-                                        uint32_t new_mask = 0;
-                                        try_invoke_void_1_any(filter_info, &new_mask, {"set_MaskBits"});
-                                    }
-                                }
-                                else
+                                if (old_mask != 0)
                                 {
-                                    bool new_enabled = false;
-                                    try_invoke_void_1_any(component, &new_enabled, {"set_Enabled"});
-                                    m_pending_components.push_back(component);
+                                    m_pending_filter_infos.push_back({filter_info, old_mask});
+                                    uint32_t new_mask = 0;
+                                    try_invoke_void_1_any(filter_info, &new_mask, {"set_MaskBits"});
+                                    core::Logger::get().debug("Disabled Collider mask");
                                 }
+                            }
+                            else
+                            {
+                                check_and_disable(component);
                             }
                         }
                     }
@@ -414,50 +436,47 @@ namespace vspp
             }
         }
 
-        // CharacterController
+        // 2. via.physics.CharacterController
         auto cc_type = tdb->find_type("via.physics.CharacterController");
         if (cc_type)
         {
-            std::vector<void *> args;
-            args.push_back(cc_type->get_instance());
+            std::vector<void *> args{cc_type->get_instance()};
             auto ret = try_invoke_ret(game_object, "getComponent(System.Type)", args);
             if (ret && ret->ptr)
-            {
-                auto cc = (API::ManagedObject *)ret->ptr;
-                auto enabled_ret = try_invoke_ret(cc, "get_Enabled", {});
-                bool enabled = false;
-                if (enabled_ret)
-                    std::memcpy(&enabled, enabled_ret->bytes.data(), sizeof(bool));
-
-                if (enabled)
-                {
-                    bool new_enabled = false;
-                    try_invoke_void_1_any(cc, &new_enabled, {"set_Enabled"});
-                    m_pending_components.push_back(cc);
-                }
-            }
+                check_and_disable((API::ManagedObject *)ret->ptr);
         }
 
-        // PlayerFPSMovementDriver
+        // 3. app.PlayerFPSMovementDriver
         auto driver_type = tdb->find_type("app.PlayerFPSMovementDriver");
         if (driver_type)
         {
-            std::vector<void *> args;
-            args.push_back(driver_type->get_instance());
+            std::vector<void *> args{driver_type->get_instance()};
             auto ret = try_invoke_ret(game_object, "getComponent(System.Type)", args);
             if (ret && ret->ptr)
-            {
-                auto driver = (API::ManagedObject *)ret->ptr;
-                auto enabled_ret = try_invoke_ret(driver, "get_Enabled", {});
-                bool enabled = false;
-                if (enabled_ret)
-                    std::memcpy(&enabled, enabled_ret->bytes.data(), sizeof(bool));
+                check_and_disable((API::ManagedObject *)ret->ptr);
+        }
 
-                if (enabled)
+        // 4. app.PlayerMovement
+        auto movement_type = tdb->find_type("app.PlayerMovement");
+        if (movement_type)
+        {
+            std::vector<void *> args{movement_type->get_instance()};
+            auto ret = try_invoke_ret(game_object, "getComponents(System.Type)", args);
+            if (ret && ret->ptr)
+            {
+                auto list = (API::ManagedObject *)ret->ptr;
+                auto count_ret = try_invoke_ret(list, "get_Count", {});
+                int count = 0;
+                if (count_ret && count_ret->bytes.size() >= sizeof(int))
+                    std::memcpy(&count, count_ret->bytes.data(), sizeof(int));
+
+                for (int i = 0; i < count; ++i)
                 {
-                    bool new_enabled = false;
-                    try_invoke_void_1_any(driver, &new_enabled, {"set_Enabled"});
-                    m_pending_components.push_back(driver);
+                    int idx = i;
+                    std::vector<void *> idx_args{&idx};
+                    auto item_ret = try_invoke_ret(list, "get_Item", idx_args);
+                    if (item_ret && item_ret->ptr)
+                        check_and_disable((API::ManagedObject *)item_ret->ptr);
                 }
             }
         }
@@ -465,6 +484,7 @@ namespace vspp
 
     void GameLogic::restore_physics_components()
     {
+        core::Logger::get().debug("Restoring physics components...");
         for (auto &info : m_pending_filter_infos)
         {
             if (info.filter_info)
@@ -483,6 +503,7 @@ namespace vspp
             }
         }
         m_pending_components.clear();
+        core::Logger::get().info("<<< Stopping noclip sequence... Done.");
     }
 
     void GameLogic::start_noclip_teleport(const core::Vector3 &pos, const core::Quaternion &rot)
@@ -490,6 +511,7 @@ namespace vspp
         if (m_noclip_active)
             stop_noclip_teleport();
 
+        core::Logger::get().info(">>> Starting noclip sequence...");
         m_noclip_active = true;
         m_noclip_elapsed = 0.0f;
         m_noclip_target_pos = pos;
@@ -498,24 +520,46 @@ namespace vspp
         // 1. Get Game Object
         auto transform = get_player_transform();
         if (!transform)
+        {
+            core::Logger::get().error("start_noclip: Transform not found");
             return;
+        }
         auto go = try_get_game_object_from_any(transform);
         if (!go)
+        {
+            core::Logger::get().error("start_noclip: GameObject not found");
             return;
+        }
 
         // 2. Disable Physics
         disable_physics_components(go);
 
         // 3. Set Initial Position
-        auto p = pos;
-        auto r = rot;
+        vspp::core::Vector3 p = pos;
+        vspp::core::Quaternion r = rot;
         try_set_position(transform, &p);
         try_set_rotation(transform, &r);
         update_context_position(p);
+
+        // 4. Initial Warp (CharacterController)
+        auto tdb = API::get()->tdb();
+        auto cc_type = tdb->find_type("via.physics.CharacterController");
+        if (cc_type)
+        {
+            std::vector<void *> args{cc_type->get_instance()};
+            auto ret = try_invoke_ret(go, "getComponent(System.Type)", args);
+            if (ret && ret->ptr)
+            {
+                auto cc = (API::ManagedObject *)ret->ptr;
+                try_invoke_ret(cc, "warp", {});
+            }
+        }
     }
 
     void GameLogic::stop_noclip_teleport()
     {
+        if (!m_noclip_active)
+            return;
         m_noclip_active = false;
         restore_physics_components();
     }
@@ -523,21 +567,48 @@ namespace vspp
     void GameLogic::tick_noclip(float delta_time)
     {
         m_noclip_elapsed += delta_time;
-        if (m_noclip_elapsed > 0.75f)
-        { // 0.75s default
+        if (m_noclip_elapsed > 0.5f) // 0.5s duration
+        {
             stop_noclip_teleport();
             return;
         }
 
-        // Re-force position logic
         auto transform = get_player_transform();
         if (transform)
         {
+            // 1. Force Transform
             vspp::core::Vector3 p = m_noclip_target_pos;
             vspp::core::Quaternion r = m_noclip_target_rot;
             try_set_position(transform, &p);
             try_set_rotation(transform, &r);
+
+            // 2. Force Context
             update_context_position(p);
+
+            // 3. Force CharacterController Disable & Warp
+            auto go = try_get_game_object_from_any(transform);
+            if (go)
+            {
+                disable_physics_components(go); // Re-disable any re-enabled components
+
+                auto tdb = API::get()->tdb();
+                auto cc_type = tdb->find_type("via.physics.CharacterController");
+                if (cc_type)
+                {
+                    std::vector<void *> args{cc_type->get_instance()};
+                    auto ret = try_invoke_ret(go, "getComponent(System.Type)", args);
+                    if (ret && ret->ptr)
+                    {
+                        auto cc = (API::ManagedObject *)ret->ptr;
+
+                        // Force set position on CC too
+                        try_invoke_void_1_any(cc, &p, {"set_Position", "set_Position(via.vec3)"});
+
+                        // Warp
+                        try_invoke_ret(cc, "warp", {});
+                    }
+                }
+            }
         }
     }
 
