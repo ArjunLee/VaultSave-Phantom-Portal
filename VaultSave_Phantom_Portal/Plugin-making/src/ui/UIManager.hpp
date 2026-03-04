@@ -27,8 +27,9 @@ namespace vspp
 
             /**
              * @brief Render the UI frame. Should be called from on_imgui_draw_ui callback.
+             * @param data The REFramework ImGui frame callback data.
              */
-            void render();
+            void render(REFImGuiFrameCbData *data);
 
             /**
              * @brief Toggle the visibility of the main UI window.

@@ -22,23 +22,27 @@ namespace vspp
             // Note: If using REFramework's on_imgui_draw_ui, we don't need to init ImGui context ourselves
             // But if we want to customize style, we can do it here.
             m_initialized = true;
+            m_visible = true; // Default to visible so it shows when REFramework menu is open
             core::Logger::get().info("UIManager initialized.");
         }
 
         void UIManager::toggle_visible()
         {
             m_visible = !m_visible;
+            core::Logger::get().info("UI visibility toggled: " + std::string(m_visible ? "ON" : "OFF"));
         }
 
-        void UIManager::render()
+        void UIManager::render(REFImGuiFrameCbData *data)
         {
             if (!m_initialized)
                 return;
 
-            // Check if we should draw
-            // If we are part of the REFramework overlay, we usually draw when is_drawing_ui() is true.
-            // The user requirement: "Fix plugin cannot show/hide via REFramework shortcut".
-            // This implies we should be visible when the overlay is visible.
+            if (!data || !data->context)
+                return;
+
+            ImGui::SetCurrentContext((ImGuiContext *)data->context);
+            if (!ImGui::GetCurrentContext())
+                return;
 
             bool reframework_ui_visible = false;
             if (auto *api = reframework::API::try_get())
@@ -49,19 +53,21 @@ namespace vspp
                 }
             }
 
-            // Logic: We draw if (m_visible [custom toggle] OR reframework_ui_visible [menu open])
-            // But typically plugins are EITHER "Always on overlay" OR "Menu windows".
-            // If the user wants "Show/Hide via REFramework shortcut", they probably mean:
-            // "When I press Insert, the window should appear/disappear."
-            // So we should respect reframework_ui_visible.
-            // BUT if the user ALSO wants a custom shortcut (F5 to toggle window), we support that too.
-
             if (!m_visible && !reframework_ui_visible)
-            {
                 return;
-            }
 
-            draw_main_window();
+            try
+            {
+                draw_main_window();
+            }
+            catch (const std::exception &e)
+            {
+                core::Logger::get().error("Exception in UIManager::render: " + std::string(e.what()));
+            }
+            catch (...)
+            {
+                core::Logger::get().error("Unknown exception in UIManager::render");
+            }
         }
 
         void UIManager::draw_main_window()
@@ -70,7 +76,15 @@ namespace vspp
             auto &cfg_mgr = config::ConfigManager::get();
             auto &config = cfg_mgr.get_config();
 
-            if (ImGui::Begin(loc.get_text("window_title").c_str(), nullptr))
+            // Use a fixed ID to prevent window state reset when language changes
+            std::string window_title = loc.get_text("window_title") + "###VSPP_MainWindow";
+
+            // Set a default size for the first time
+            ImGui::SetNextWindowSize(ImVec2(300, 400), ImGuiCond_FirstUseEver);
+
+            bool open = true;
+            // Pass &open to allow closing via X button if desired, though we handle visibility externally
+            if (ImGui::Begin(window_title.c_str(), &open))
             {
                 ImGui::Text("%s", loc.get_text("welcome").c_str());
 

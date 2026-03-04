@@ -66,39 +66,52 @@ namespace vspp
         void Logger::info(const std::string &message)
         {
             write_to_file("INFO", message);
-            if (auto *api = reframework::API::try_get())
-            {
-                api->log_info("[VaultSave] %s", message.c_str());
-            }
+            // Comment out API log to prevent potential recursion if hooked functions trigger logging
+            // if (auto *api = reframework::API::try_get())
+            // {
+            //     api->log_info("[VaultSave] %s", message.c_str());
+            // }
         }
 
         void Logger::warn(const std::string &message)
         {
             write_to_file("WARN", message);
-            if (auto *api = reframework::API::try_get())
-            {
-                api->log_warn("[VaultSave] %s", message.c_str());
-            }
+            // if (auto *api = reframework::API::try_get())
+            // {
+            //     api->log_warn("[VaultSave] %s", message.c_str());
+            // }
         }
 
         void Logger::error(const std::string &message)
         {
             write_to_file("ERROR", message);
-            if (auto *api = reframework::API::try_get())
-            {
-                api->log_error("[VaultSave] %s", message.c_str());
-            }
+            // if (auto *api = reframework::API::try_get())
+            // {
+            //     api->log_error("[VaultSave] %s", message.c_str());
+            // }
         }
 
         void Logger::debug(const std::string &message)
         {
+            bool debug_enabled = false;
 #ifdef _DEBUG
-            write_to_file("DEBUG", message);
-            if (auto *api = reframework::API::try_get())
-            {
-                api->log_info("[VaultSave] [DEBUG] %s", message.c_str());
-            }
+            debug_enabled = true;
 #endif
+            // Check for debug.enable file
+            static bool checked_file = false;
+            static bool file_enabled = false;
+            // Only check once per session to avoid performance hit
+            if (!checked_file && m_initialized) {
+                if (std::filesystem::exists(m_log_path.parent_path() / "debug.enable")) {
+                    file_enabled = true;
+                }
+                checked_file = true;
+            }
+            if (file_enabled) debug_enabled = true;
+
+            if (debug_enabled) {
+                write_to_file("DEBUG", message);
+            }
         }
 
         void Logger::write_to_file(const std::string &level, const std::string &message)
