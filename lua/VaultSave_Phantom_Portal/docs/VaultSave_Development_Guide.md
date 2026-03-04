@@ -1,6 +1,6 @@
-# VaultCore (C++) 插件化开发指引
+# VaultSave (C++) 插件化开发指引
 
-本此文档旨在指导开发者将 `VaultSave_Phantom_Portal.lua` 的核心逻辑迁移至 C++ DLL (`VaultCore.dll`)，以实现源码保护（闭源）与性能优化。
+本此文档旨在指导开发者将 `VaultSave_Phantom_Portal.lua` 的核心逻辑迁移至 C++ DLL (`VaultSave_RE9_PhantomPortal.dll`)，以实现源码保护（闭源）与性能优化。
 
 ## 1. 开发环境准备
 
@@ -19,7 +19,7 @@
 
 ### 2.1 目录结构推荐
 ```
-VaultCore/
+VaultSave/
 ├── CMakeLists.txt          # 构建脚本
 ├── src/
 │   ├── Main.cpp            # 插件入口 (reframework_plugin_initialize)
@@ -37,17 +37,17 @@ VaultCore/
 
 ```cmake
 cmake_minimum_required(VERSION 3.20)
-project(VaultCore)
+project(VaultSave)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_library(VaultCore SHARED src/Main.cpp src/Plugin.cpp src/UI.cpp)
+add_library(VaultSave SHARED src/Main.cpp src/Plugin.cpp src/UI.cpp)
 
 # 包含 REFramework 头文件
-target_include_directories(VaultCore PRIVATE include)
+target_include_directories(VaultSave PRIVATE include)
 
 # 链接库 (如需要)
-# target_link_libraries(VaultCore PRIVATE ...)
+# target_link_libraries(VaultSave PRIVATE ...)
 ```
 
 ## 3. 核心迁移指南 (Lua -> C++)
@@ -71,7 +71,7 @@ extern "C" __declspec(dllexport) void reframework_plugin_initialize(const REFram
 
 ### 3.2 API 调用对照表
 
-| 功能 | Lua (Snapshot_Mod.lua) | C++ (VaultCore) |
+| 功能 | Lua (Snapshot_Mod.lua) | C++ (VaultSave) |
 | :--- | :--- | :--- |
 | **获取单例** | `sdk.get_managed_singleton("app.Foo")` | `reframework::API::get()->get_managed_singleton("app.Foo")` |
 | **查找类型** | `sdk.find_type_definition("app.Bar")` | `reframework::API::get()->tdb()->find_type("app.Bar")` |
@@ -117,7 +117,7 @@ REFramework 的 C++ 示例插件中包含了完整的 D3D11/D3D12 Hook 代码 (`
 ### 4.1 编译
 1.  在 Visual Studio 中选择 **Release** 模式。
 2.  生成解决方案。
-3.  输出文件：`VaultCore.dll`。
+3.  输出文件：`VaultSave_RE9_PhantomPortal.dll`。
 
 ### 4.2 混淆与加固 (可选 - 进阶保护)
 虽然编译为 DLL 已经是机器码（汇编），比 Lua 脚本安全得多，但仍可被逆向。
@@ -126,7 +126,7 @@ REFramework 的 C++ 示例插件中包含了完整的 D3D11/D3D12 Hook 代码 (`
 - **控制流平坦化 (OLLVM)**: 增加逆向分析难度。
 
 ### 4.3 安装方式
-用户只需将 `VaultCore.dll` 放入游戏目录下的 `reframework/plugins/` 文件夹即可，无需任何 Lua 脚本。
+用户只需将 `VaultSave_RE9_PhantomPortal.dll` 放入游戏目录下的 `reframework/plugins/` 文件夹即可，无需任何 Lua 脚本。
 
 ## 5. 常见问题 (FAQ)
 
