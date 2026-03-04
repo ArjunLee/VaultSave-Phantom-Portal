@@ -1,0 +1,19 @@
+cmake_minimum_required(VERSION 3.20)
+project(VaultCore_RE9_PhantomPortal)
+
+set(CMAKE_CXX_STANDARD 20)
+
+# 包含目录
+include_directories(include)
+
+# 源文件列表
+file(GLOB_RECURSE SOURCES "src/*.cpp")
+
+# 生成动态链接库 (DLL)
+# 产物名称统一为 VaultCore_RE9_PhantomPortal.dll
+add_library(VaultCore_RE9_PhantomPortal SHARED ${SOURCES})
+
+# 链接选项 (Windows特有)
+if(WIN32)
+    target_link_libraries(VaultCore_RE9_PhantomPortal PRIVATE kernel32 user32 gdi32)
+endif()
