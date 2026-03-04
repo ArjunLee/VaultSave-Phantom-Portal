@@ -1,7 +1,9 @@
 # User exclusions
 .other_people_lua/
-dump/
 log/
+lua/VaultSave_Phantom_Portal/Plugin-making/.log
+lua/VaultSave_Phantom_Portal/Plugin-making/dmp
+re9_dump/
 
 # Lua
 *.luac
@@ -26,5 +28,5 @@ cmake_install.cmake
 *.exp
 compile_commands.json
 
-lua/VaultSave_Phantom_Portal/Plugin-making/.log
-lua/VaultSave_Phantom_Portal/Plugin-making/dmp
+
+
