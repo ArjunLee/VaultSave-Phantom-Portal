@@ -4,12 +4,16 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <cstdlib>
+
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 
 namespace vspp
 {
     namespace core
     {
-
         Logger &Logger::get()
         {
             static Logger instance;
@@ -18,44 +22,74 @@ namespace vspp
 
         void Logger::initialize(const std::filesystem::path &log_path)
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            if (m_initialized && m_file_stream.is_open())
+            std::lock_guard<std::recursive_mutex> lock(m_mutex);
+
+            if (m_initialized)
             {
-                m_file_stream.close();
+                close();
             }
 
             m_log_path = log_path;
 
-            // Create directories if they don't exist
+            check_environment();
+
             if (m_log_path.has_parent_path())
             {
                 std::filesystem::create_directories(m_log_path.parent_path());
             }
 
+            // Open in append mode
             m_file_stream.open(m_log_path, std::ios::out | std::ios::app);
-            m_initialized = true;
-            // check_file_size(); // Avoid recursive lock or complex logic during init
 
-            // Write initial log manually to avoid mutex recursion if info() calls write_to_file
-            // But write_to_file locks mutex too. Recursive mutex needed?
-            // std::mutex is not recursive.
-            // info() calls write_to_file() which locks mutex.
-            // initialize() locks mutex.
-            // calling info() from initialize() will DEADLOCK.
+            if (m_file_stream.is_open())
+            {
+                m_initialized = true;
 
-            // Wait, previous code had:
-            // info("Logger initialized.");
-            // info() -> write_to_file() -> lock(m_mutex).
-            // initialize() -> lock(m_mutex).
-            // This IS a deadlock if called from same thread?
-            // std::mutex is non-recursive. Yes.
+                // Write session separator
+                m_file_stream << "\n====== VaultSavePhantomPortal LOG START ======\n";
+                m_file_stream.flush();
 
-            // I should fix this deadlock too.
+                info("Logger initialized. Environment: " + std::string(m_debug_enabled ? "Development" : "Production"));
+            }
+        }
+
+        void Logger::check_environment()
+        {
+            m_debug_enabled = false;
+
+            // 1. Check Env Var: VaultSaveDev = JunSnake
+#ifdef _WIN32
+            char *buf = nullptr;
+            size_t sz = 0;
+            if (_dupenv_s(&buf, &sz, "VaultSaveDev") == 0 && buf != nullptr)
+            {
+                if (std::string(buf) == "JunSnake")
+                {
+                    m_debug_enabled = true;
+                }
+                free(buf);
+            }
+#else
+            const char *env = std::getenv("VaultSaveDev");
+            if (env && std::string(env) == "JunSnake")
+            {
+                m_debug_enabled = true;
+            }
+#endif
+
+            // 2. Check file override (debug.enable)
+            if (!m_debug_enabled && m_log_path.has_parent_path())
+            {
+                if (std::filesystem::exists(m_log_path.parent_path() / "debug.enable"))
+                {
+                    m_debug_enabled = true;
+                }
+            }
         }
 
         void Logger::close()
         {
-            std::lock_guard<std::mutex> lock(m_mutex);
+            std::lock_guard<std::recursive_mutex> lock(m_mutex);
             if (m_file_stream.is_open())
             {
                 m_file_stream.close();
@@ -65,93 +99,66 @@ namespace vspp
 
         void Logger::info(const std::string &message)
         {
-            write_to_file("INFO", message);
-            // Comment out API log to prevent potential recursion if hooked functions trigger logging
-            // if (auto *api = reframework::API::try_get())
-            // {
-            //     api->log_info("[VaultSave] %s", message.c_str());
-            // }
+            write_log("info", message, true);
         }
 
         void Logger::warn(const std::string &message)
         {
-            write_to_file("WARN", message);
-            // if (auto *api = reframework::API::try_get())
-            // {
-            //     api->log_warn("[VaultSave] %s", message.c_str());
-            // }
+            write_log("warn", message, true);
         }
 
         void Logger::error(const std::string &message)
         {
-            write_to_file("ERROR", message);
-            // if (auto *api = reframework::API::try_get())
-            // {
-            //     api->log_error("[VaultSave] %s", message.c_str());
-            // }
+            write_log("error", message, true);
         }
 
         void Logger::debug(const std::string &message)
         {
-            bool debug_enabled = false;
-#ifdef _DEBUG
-            debug_enabled = true;
-#endif
-            // Check for debug.enable file
-            static bool checked_file = false;
-            static bool file_enabled = false;
-            // Only check once per session to avoid performance hit
-            if (!checked_file && m_initialized) {
-                if (std::filesystem::exists(m_log_path.parent_path() / "debug.enable")) {
-                    file_enabled = true;
-                }
-                checked_file = true;
-            }
-            if (file_enabled) debug_enabled = true;
-
-            if (debug_enabled) {
-                write_to_file("DEBUG", message);
+            if (m_debug_enabled)
+            {
+                write_log("debug", message, false); // Debug logs usually don't go to API unless very verbose needed
             }
         }
 
-        void Logger::write_to_file(const std::string &level, const std::string &message)
+        void Logger::write_log(const std::string &level, const std::string &message, bool to_api)
         {
-            // Use recursive_mutex if we want recursive calls, but std::mutex is faster.
-            // We will just implement rotation logic inline or in a private helper that expects lock to be held.
-            std::lock_guard<std::mutex> lock(m_mutex);
+            std::lock_guard<std::recursive_mutex> lock(m_mutex);
 
-            if (!m_initialized || !m_file_stream.is_open())
-                return;
-
-            // Check size (simple check using tellp)
-            if (m_file_stream.tellp() > 10 * 1024 * 1024) // 10MB
+            // 1. Write to file
+            if (m_initialized && m_file_stream.is_open())
             {
-                m_file_stream.close();
-                // Simple rotation: delete old log and start new
-                // For better rotation, we could rename to .bak
-                try
-                {
-                    std::filesystem::remove(m_log_path);
-                }
-                catch (...)
-                {
-                }
+                auto now = std::chrono::system_clock::now();
+                auto in_time_t = std::chrono::system_clock::to_time_t(now);
 
-                m_file_stream.open(m_log_path, std::ios::out | std::ios::app);
-                if (m_file_stream.is_open())
-                {
-                    m_file_stream << "[SYSTEM] Log file rotated due to size limit.\n";
-                }
+                std::stringstream ss;
+                ss << "[" << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d %H:%M:%S") << "] "
+                   << "[vspp] [" << level << "] [VaultSavePhantomPortal] " << message << "\n";
+
+                m_file_stream << ss.str();
+                m_file_stream.flush();
             }
 
-            auto now = std::chrono::system_clock::now();
-            auto now_c = std::chrono::system_clock::to_time_t(now);
-
-            std::stringstream ss;
-            ss << "[" << std::put_time(std::localtime(&now_c), "%Y-%m-%d %H:%M:%S") << "] [" << level << "] " << message << "\n";
-
-            m_file_stream << ss.str();
-            m_file_stream.flush();
+            // 2. Write to REFramework API
+            if (to_api)
+            {
+                if (auto *api = reframework::API::try_get())
+                {
+                    try
+                    {
+                        std::string formatted_msg = "[VaultSavePhantomPortal] " + message;
+                        if (level == "info")
+                            api->log_info(formatted_msg.c_str());
+                        else if (level == "warn")
+                            api->log_warn(formatted_msg.c_str());
+                        else if (level == "error")
+                            api->log_error(formatted_msg.c_str());
+                    }
+                    catch (...)
+                    {
+                        // Fallback or ignore if API fails
+                    }
+                }
+            }
         }
 
     } // namespace core

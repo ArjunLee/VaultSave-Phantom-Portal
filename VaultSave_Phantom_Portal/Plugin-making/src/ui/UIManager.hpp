@@ -54,6 +54,8 @@ namespace vspp
 
             bool m_initialized{false};
             bool m_visible{false};
+            bool m_last_framework_visible{false};
+            int m_frame_count{0};
 
             void draw_main_window();
         };

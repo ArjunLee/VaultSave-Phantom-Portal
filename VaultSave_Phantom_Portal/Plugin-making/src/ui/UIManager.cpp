@@ -22,7 +22,7 @@ namespace vspp
             // Note: If using REFramework's on_imgui_draw_ui, we don't need to init ImGui context ourselves
             // But if we want to customize style, we can do it here.
             m_initialized = true;
-            m_visible = true; // Default to visible so it shows when REFramework menu is open
+            m_visible = false;
             core::Logger::get().info("UIManager initialized.");
         }
 
@@ -37,27 +37,59 @@ namespace vspp
             if (!m_initialized)
                 return;
 
-            if (!data || !data->context)
-                return;
-
-            ImGui::SetCurrentContext((ImGuiContext *)data->context);
-            if (!ImGui::GetCurrentContext())
-                return;
-
-            bool reframework_ui_visible = false;
-            if (auto *api = reframework::API::try_get())
+            // Startup protection: Skip first 60 frames (approx 1s) to ensure ImGui is stable
+            if (m_frame_count < 60)
             {
-                if (api->param()->functions->is_drawing_ui())
-                {
-                    reframework_ui_visible = true;
-                }
+                m_frame_count++;
+                return;
             }
 
-            if (!m_visible && !reframework_ui_visible)
+            // core::Logger::get().debug("UIManager::render enter");
+
+            if (!data || !data->context)
+            {
+                core::Logger::get().warn("UIManager::render: Invalid data or context");
                 return;
+            }
 
             try
             {
+                // Set context if available
+                ImGuiContext *old_ctx = ImGui::GetCurrentContext();
+                ImGuiContext *new_ctx = (ImGuiContext *)data->context;
+
+                if (old_ctx != new_ctx)
+                {
+                    ImGui::SetCurrentContext(new_ctx);
+                }
+
+                if (!ImGui::GetCurrentContext())
+                {
+                    core::Logger::get().error("UIManager::render: ImGui context is NULL after set");
+                    return;
+                }
+
+                bool reframework_ui_visible = false;
+                if (auto *api = reframework::API::try_get())
+                {
+                    if (api->param()->functions->is_drawing_ui())
+                    {
+                        reframework_ui_visible = true;
+                    }
+                }
+
+                if (reframework_ui_visible != m_last_framework_visible)
+                {
+                    m_last_framework_visible = reframework_ui_visible;
+                    core::Logger::get().info(std::string("REFramework UI visibility: ") + (reframework_ui_visible ? "ON" : "OFF"));
+                }
+
+                m_visible = reframework_ui_visible;
+                if (!m_visible)
+                {
+                    return;
+                }
+
                 draw_main_window();
             }
             catch (const std::exception &e)

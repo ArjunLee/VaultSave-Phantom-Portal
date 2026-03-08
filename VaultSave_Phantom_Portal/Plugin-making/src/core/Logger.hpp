@@ -25,10 +25,15 @@ namespace vspp
 
             void initialize(const std::filesystem::path &log_path);
             void close();
+
+            // Standard logging methods
             void info(const std::string &message);
             void warn(const std::string &message);
             void error(const std::string &message);
             void debug(const std::string &message);
+
+            // Check if debug mode is enabled (Env var or file)
+            bool is_debug_enabled() const { return m_debug_enabled; }
 
         private:
             Logger() = default;
@@ -38,10 +43,12 @@ namespace vspp
 
             std::filesystem::path m_log_path;
             std::ofstream m_file_stream;
-            std::mutex m_mutex;
+            mutable std::recursive_mutex m_mutex; // Changed to recursive_mutex to prevent deadlocks
             bool m_initialized{false};
+            bool m_debug_enabled{false};
 
-            void write_to_file(const std::string &level, const std::string &message);
+            void check_environment();
+            void write_log(const std::string &level, const std::string &message, bool to_api = true);
         };
 
     } // namespace core
